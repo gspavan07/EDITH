@@ -39,6 +39,20 @@ app.include_router(sessions.router, prefix="/api/v1/sessions", tags=["Sessions"]
 app.include_router(scheduler.router, prefix="/api/v1/scheduler", tags=["Scheduler"])
 app.include_router(linkedin.router, prefix="/api/v1/linkedin", tags=["LinkedIn"])
 
+@app.on_event("startup")
+async def startup_event():
+    # Start Telegram Bot if enabled
+    from app.services.telegram_adapter import TelegramBotService
+    from app.core.config import settings
+    import threading
+    
+    if settings.ENABLE_TELEGRAM and settings.TELEGRAM_BOT_TOKEN:
+        logger.info("Starting Telegram Bot adapter in background...")
+        bot_service = TelegramBotService()
+        # Run in a separate thread so it doesn't block FastAPI
+        thread = threading.Thread(target=bot_service.run, daemon=True)
+        thread.start()
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to EDITH"}

@@ -161,7 +161,61 @@ class LinkedInService:
             print(f"Image upload error: {str(e)}")
             return None
 
-    async def create_post(self, text: str, image_urns: List[str] = None) -> Dict[str, Any]:
+    async def upload_video(self, video_path: str) -> Optional[str]:
+        """Upload video to LinkedIn (Simplified implementation for smaller files)"""
+        try:
+            async with httpx.AsyncClient() as client:
+                # Step 1: Initialize video upload
+                headers = {
+                    "Authorization": f"Bearer {self.access_token}",
+                    "LinkedIn-Version": "202411",
+                    "X-Restli-Protocol-Version": "2.0.0"
+                }
+                
+                init_payload = {
+                    "initializeUploadRequest": {
+                        "owner": f"urn:li:person:{self.user_id}",
+                        "fileSize": os.path.getsize(video_path),
+                        "uploadCaptions": False,
+                        "uploadThumbnail": False
+                    }
+                }
+                
+                init_response = await client.post(
+                    f"{self.api_base}/videos?action=initializeUpload",
+                    headers=headers,
+                    json=init_payload
+                )
+                
+                if init_response.status_code != 200:
+                    print(f"Video init failed: {init_response.text}")
+                    return None
+                
+                init_data = init_response.json()
+                upload_instructions = init_data["value"]["uploadInstructions"][0]
+                upload_url = upload_instructions["uploadUrl"]
+                video_urn = init_data["value"]["video"]
+                
+                # Step 2: Upload video data
+                with open(video_path, "rb") as f:
+                    video_data = f.read()
+                
+                upload_response = await client.put(
+                    upload_url,
+                    content=video_data,
+                    headers={"Content-Type": "application/octet-stream"}
+                )
+                
+                if upload_response.status_code in [200, 201]:
+                    return video_urn
+                else:
+                    print(f"Video upload failed: {upload_response.text}")
+                    return None
+        except Exception as e:
+            print(f"Video upload error: {str(e)}")
+            return None
+
+    async def create_post(self, text: str, image_urns: List[str] = None, video_urns: List[str] = None) -> Dict[str, Any]:
         """Create a LinkedIn post with optional images"""
         try:
             async with httpx.AsyncClient() as client:
@@ -186,19 +240,27 @@ class LinkedInService:
                     "isReshareDisabledByAuthor": False
                 }
                 
-                # Add images if provided
-                if image_urns:
-                    post_payload["content"] = {
-                        "media": {
-                            "title": "Image Post",
-                            "id": image_urns[0] if len(image_urns) == 1 else None
+                # Add media if provided
+                if image_urns or video_urns:
+                    if video_urns:
+                        post_payload["content"] = {
+                            "media": {
+                                "title": "Video Post",
+                                "id": video_urns[0]
+                            }
                         }
-                    }
-                    
-                    if len(image_urns) > 1:
-                        post_payload["content"]["multiImage"] = {
-                            "images": [{"id": urn} for urn in image_urns]
+                    elif image_urns:
+                        post_payload["content"] = {
+                            "media": {
+                                "title": "Image Post",
+                                "id": image_urns[0] if len(image_urns) == 1 else None
+                            }
                         }
+                        
+                        if len(image_urns) > 1:
+                            post_payload["content"]["multiImage"] = {
+                                "images": [{"id": urn} for urn in image_urns]
+                            }
                 
                 response = await client.post(
                     self.posts_url,

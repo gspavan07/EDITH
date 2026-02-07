@@ -1,65 +1,25 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
+import OmniDock from "./components/OmniDock";
+import CommandConsole from "./components/CommandConsole";
 import ChatWindow from "./components/ChatWindow";
-import AuditPanel from "./components/AuditPanel";
-import Sidebar from "./components/Sidebar";
 import SettingsPanel from "./components/SettingsPanel";
-import { RotateCcw } from "lucide-react";
+import DocumentExplorer from "./components/DocumentExplorer";
 import "./index.css";
 
 function App() {
+  const [activeView, setActiveView] = useState("chat");
   const [messages, setMessages] = useState([
     {
       id: 1,
-      text: "EDITH v2.0 (Elite Edition) Online. All 16 intelligence pillars are being initialized. How can I assist your mission today?",
+      text: "EDITH V3.0 ONLINE. Neural network stabilized. I am ready for tactical orchestration. How can I assist your mission?",
       sender: "ai",
     },
   ]);
-  const [logs, setLogs] = useState([
-    {
-      id: 1,
-      type: "success",
-      text: "EDITH v1.0 Core Online. All modules healthy.",
-    },
-  ]);
+  const [logs, setLogs] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
-
-  const loadChatSession = async (sessionId) => {
-    try {
-      const res = await axios.get(
-        `http://localhost:8000/api/v1/sessions/${sessionId}/messages`
-      );
-      const loadedMessages = res.data.map((msg, idx) => ({
-        id: idx + 1,
-        text: msg.content,
-        sender: msg.role === "user" ? "user" : "ai",
-      }));
-      setMessages(loadedMessages);
-      setCurrentSessionId(sessionId);
-    } catch (err) {
-      console.error("Failed to load chat session", err);
-    }
-  };
-
-  const resetSession = () => {
-    setMessages([
-      {
-        id: Date.now(),
-        text: "Session Reset. How can I help you now?",
-        sender: "ai",
-      },
-    ]);
-    setLogs([
-      {
-        id: Date.now(),
-        type: "success",
-        text: "History Cleared. New context initialized.",
-      },
-    ]);
-    setCurrentSessionId(null);
-  };
+  const [consoleVisible, setConsoleVisible] = useState(false);
 
   const handleSendMessage = async (text) => {
     const newUserMsg = { id: Date.now(), text, sender: "user" };
@@ -68,7 +28,11 @@ function App() {
     setIsProcessing(true);
     setLogs((prev) => [
       ...prev,
-      { id: Date.now(), type: "thinking", text: `Planning Sequence...` },
+      {
+        id: Date.now(),
+        type: "thinking",
+        text: `INITIATING_SEQUENCE_PLAN: "${text.substring(0, 20)}..."`,
+      },
     ]);
 
     try {
@@ -82,7 +46,7 @@ function App() {
         history: history,
       });
 
-      const { response: aiText, log_id, intent, actions } = response.data;
+      const { response: aiText, log_id, intent } = response.data;
 
       setMessages((prev) => [
         ...prev,
@@ -91,68 +55,49 @@ function App() {
 
       setLogs((prev) => [
         ...prev,
-        { id: Date.now() + 1, type: "action", text: `Intent: ${intent}` },
+        {
+          id: Date.now() + 1,
+          type: "action",
+          text: `DETECTED_INTENT: ${intent.toUpperCase()}`,
+        },
       ]);
 
+      // Fetch log details
       try {
         const logRes = await axios.get(
-          `http://localhost:8000/api/v1/logs/${log_id}`
+          `http://localhost:8000/api/v1/logs/${log_id}`,
         );
         const logData = logRes.data;
-
-        if (logData.details && logData.details.plan) {
-          setLogs((prev) => [
-            ...prev,
-            {
-              id: Date.now() + 2,
-              type: "thinking",
-              text: "Reasoning: Plan Generated",
-              details: logData.details.plan,
-            },
-          ]);
-        }
-
-        if (logData.details && logData.details.steps) {
+        if (logData.details?.steps) {
           logData.details.steps.forEach((step, idx) => {
             setLogs((prev) => [
               ...prev,
               {
-                id: Date.now() + 10 + idx,
+                id: Date.now() + 100 + idx,
                 type: "action",
-                text: `Executing: ${step.action}`,
-                details: { arguments: step.args, result: step.result },
+                text: `EXEC_STEP_${idx + 1}: ${step.action}`,
+                details: step.result,
               },
             ]);
           });
         }
-      } catch (logError) {
-        console.warn("Audit logs temporarily unavailable.");
-      }
+      } catch (e) {}
 
       setLogs((prev) => [
         ...prev,
         {
           id: Date.now() + 60,
           type: "success",
-          text: `Sequence Complete (ID: ${log_id})`,
+          text: `SEQUENCE_COMPLETE: LOG_ID_${log_id}`,
         },
       ]);
     } catch (error) {
-      console.error("Chat Error:", error);
       setLogs((prev) => [
         ...prev,
         {
-          id: Date.now() + 40,
+          id: Date.now(),
           type: "error",
-          text: "Agent error. Try resetting the session.",
-        },
-      ]);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 5,
-          text: "I encountered an error. Would you like to reset the session?",
-          sender: "ai",
+          text: "SEQUENCE_ABORTED: SYSTEM_ERROR",
         },
       ]);
     } finally {
@@ -161,44 +106,113 @@ function App() {
   };
 
   return (
-    <div className="app-container">
-      <Sidebar
+    <div className="omni-layout">
+      {/* Top Pulse/Identity Area */}
+      <header
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "80px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 40px",
+          zIndex: 50,
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "15px",
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            style={{
+              width: "12px",
+              height: "12px",
+              background: "var(--accent-primary)",
+              borderRadius: "50%",
+              boxShadow: "0 0 15px var(--accent-primary)",
+              animation: "pulseNeon 2s infinite",
+            }}
+          ></div>
+          <h1
+            style={{
+              fontSize: "0.9rem",
+              letterSpacing: "0.3em",
+              fontWeight: 900,
+              color: "var(--accent-primary)",
+            }}
+          >
+            EDITH.COMMAND_CENTER v3.0
+          </h1>
+        </div>
+        <div
+          style={{
+            color: "var(--text-ghost)",
+            fontSize: "0.7rem",
+            fontFamily: "var(--font-mono)",
+            pointerEvents: "auto",
+          }}
+        >
+          NEURAL_HEALTH: 100% | UPTIME: 3H_12M
+        </div>
+      </header>
+
+      <div className="viewport-container">
+        <div className="viewport-content">
+          {activeView === "chat" && (
+            <ChatWindow
+              messages={messages}
+              onSend={handleSendMessage}
+              isProcessing={isProcessing}
+            />
+          )}
+          {activeView === "knowledge" && (
+            <div style={{ padding: "50px 0", height: "100%" }}>
+              <DocumentExplorer onClose={() => setActiveView("chat")} />
+            </div>
+          )}
+          {activeView === "dashboard" && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "var(--text-ghost)",
+              }}
+            >
+              SYSTEM_DASHBOARD_PREPARING...
+            </div>
+          )}
+        </div>
+      </div>
+
+      <OmniDock
+        activeView={activeView}
+        onViewChange={setActiveView}
         onSettingsClick={() => setShowSettings(true)}
-        onNewChat={resetSession}
-        onChatClick={loadChatSession}
+        onConsoleToggle={() => setConsoleVisible(!consoleVisible)}
       />
+
+      <CommandConsole
+        logs={logs}
+        visible={consoleVisible}
+        onClose={() => setConsoleVisible(false)}
+        onClear={() => setLogs([])}
+      />
+
       {showSettings && (
         <div className="settings-overlay">
           <SettingsPanel onClose={() => setShowSettings(false)} />
         </div>
       )}
-      <div className="chat-area">
-        <header>
-          <div className="logo-container">
-            <div className="logo-icon">E2</div>
-            <div className="logo-text">EDITH v2.0 Elite</div>
-          </div>
-
-          <button onClick={resetSession} className="reset-btn-glass">
-            <RotateCcw size={14} />
-            <span>New Session</span>
-          </button>
-        </header>
-
-        <ChatWindow
-          messages={messages}
-          onSend={handleSendMessage}
-          isProcessing={isProcessing}
-        />
-      </div>
-      <AuditPanel
-        logs={logs}
-        onClear={() =>
-          setLogs([
-            { id: Date.now(), type: "success", text: "Process log reset." },
-          ])
-        }
-      />
     </div>
   );
 }

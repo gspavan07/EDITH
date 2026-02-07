@@ -14,6 +14,7 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: Optional[str] = None
     history: Optional[List[dict]] = []
 
 class ChatResponse(BaseModel):
@@ -57,8 +58,36 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_log)
 
-    # 4. Agentic Loop (Tool Calling)
-    conversation_history = request.history.copy()
+    # 4. History Handling (Persistence Support)
+    conversation_history = []
+    
+    # If session_id is provided, try to load history from DB if request history is empty
+    db_session = None
+    if request.session_id:
+        db_session = db.query(models.ChatSession).filter(models.ChatSession.external_id == request.session_id).first()
+        if not db_session:
+            db_session = models.ChatSession(external_id=request.session_id, title=f"Chat {request.session_id}")
+            db.add(db_session)
+            db.commit()
+            db.refresh(db_session)
+        
+        # Load last 10 messages if client didn't provide history
+        if not request.history:
+            past_msgs = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == db_session.id).order_by(models.ChatMessage.timestamp.desc()).limit(10).all()
+            for msg in reversed(past_msgs):
+                # Convert back to parts format for Gemni/LLM
+                role = "user" if msg.role == "user" else "model"
+                conversation_history.append({"role": role, "parts": [{"text": msg.content}]})
+        else:
+            conversation_history = request.history.copy()
+    else:
+        conversation_history = request.history.copy()
+
+    # Save user message to DB
+    if db_session:
+        user_msg = models.ChatMessage(session_id=db_session.id, role="user", content=request.message)
+        db.add(user_msg)
+        db.commit()
     
     # Inject Plan if available
     context_instruction = llm_service.system_instruction
@@ -173,6 +202,12 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
     new_log.description = f"Intent: {intent} | Plan: {len(plan_data['steps']) if plan_data else 0} | Actions: {len(actions_taken)}"
     new_log.details = {**new_log.details, "response": final_response, "actions": actions_taken}
+    
+    # Save assistant response to DB
+    if db_session:
+        asst_msg = models.ChatMessage(session_id=db_session.id, role="assistant", content=final_response)
+        db.add(asst_msg)
+        
     db.commit()
 
     return ChatResponse(

@@ -63,7 +63,14 @@ class LLMService:
             "7. **No Duplicate Actions**: NEVER call the same tool twice for a single user request unless the first attempt failed or the user explicitly asks to retry.\n"
             "8. **LinkedIn Posting**: If 'post_to_linkedin' returns '✅ Successfully posted', the post is LIVE. Do NOT ask for OAuth tokens or re-post.\n"
             "9. **Professional Communication**: Your output should be structured, high-value, and precise. Use Markdown formatting for clarity.\n"
-            "10. **Uploaded Images**: If the user uploads an image and asks to post it to LinkedIn, use the `post_to_linkedin` tool with the provided file path. DO NOT claim you cannot analyze images. DO NOT ask for a description. JUST POST IT."
+            "10. **Uploaded Images**: If the user uploads an image and asks to post it to LinkedIn, use the `post_to_linkedin` tool with the provided file path. DO NOT claim you cannot analyze images. DO NOT ask for a description. JUST POST IT.\n\n"
+            "### V3.0 INTELLIGENCE CORE (RAG & REASONING):\n"
+            "1. **Document Analysis**: When a user mentions uploaded files or asks to 'analyze' documents, YOU MUST follow this sequence:\n"
+            "   - STEP 1: Call `index_agent_files` to ensure the vector store is synced with all local files.\n"
+            "   - STEP 2: Call `ask_document` with a specific query to extract semantic context.\n"
+            "   - STEP 3: (Experimental) Use `reason_over_mission` for complex, multi-page strategy analysis.\n"
+            "2. **Vector Store Dependency**: DO NOT use legacy `read_pdf` or `analyze_data` for general document questions. The Vector Store tools are the primary intelligence source for scale.\n"
+            "3. **Real-time Status**: Always inform the user when you are 'indexing' or 'searching indexed records' to maintain the Omni-Dash transparency."
         )
 
     async def get_raw_response(
@@ -111,24 +118,36 @@ class LLMService:
         # TRY PROVIDERS WITH FALLBACK
         # ---------------------------------------------------------
         
-        # List of candidate configs to try
+        # Build priority list based on user selection
         configs_to_try = []
         
-        # 1. Primary: Gemini (with Key Rotation)
-        if self.gemini_keys:
-            # We will try up to the number of Gemini keys we have
-            for _ in range(len(self.gemini_keys)):
-                configs_to_try.append({
-                    "name": f"Gemini (Key Cycle)",
-                    "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                    "model": "gemini-2.5-flash",
-                    "key": next(self.gemini_cycle)
-                })
+        primary_name = settings.PRIMARY_LLM
+        primary_model = settings.PRIMARY_MODEL
         
-        # 2. Fallbacks: Groq then OpenAI
-        if self.groq_key: 
+        # Add primary if keys exist
+        if primary_name == "Gemini" and self.gemini_keys:
+            configs_to_try.append({
+                "name": f"Gemini (Primary)",
+                "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                "model": primary_model,
+                "key": next(self.gemini_cycle)
+            })
+        elif primary_name == "Groq" and self.groq_key:
+            configs_to_try.append({"name": "Groq (Primary)", "url": "https://api.groq.com/openai/v1/chat/completions", "model": primary_model, "key": self.groq_key})
+        elif primary_name == "OpenAI" and self.openai_key:
+            configs_to_try.append({"name": "OpenAI (Primary)", "url": "https://api.openai.com/v1/chat/completions", "model": primary_model, "key": self.openai_key})
+
+        # Add remaining as fallbacks
+        if primary_name != "Gemini" and self.gemini_keys:
+             configs_to_try.append({
+                "name": "Gemini Fallback",
+                "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                "model": "gemini-2.5-flash",
+                "key": next(self.gemini_cycle)
+            })
+        if primary_name != "Groq" and self.groq_key:
             configs_to_try.append({"name": "Groq Fallback", "url": "https://api.groq.com/openai/v1/chat/completions", "model": "openai/gpt-oss-20b", "key": self.groq_key})
-        if self.openai_key:
+        if primary_name != "OpenAI" and self.openai_key:
             configs_to_try.append({"name": "OpenAI Fallback", "url": "https://api.openai.com/v1/chat/completions", "model": "gpt-4o", "key": self.openai_key})
 
         async with httpx.AsyncClient() as client:

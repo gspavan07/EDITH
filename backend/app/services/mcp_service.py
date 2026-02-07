@@ -27,18 +27,73 @@ from openpyxl import Workbook
 from app.db.database import SessionLocal
 from app.db.models import SystemSetting
 from app.db import models
+from app.services.document_parser_service import DocumentParserService
+from app.services.vector_store_service import vector_store
+from app.services.reasoning_agent_service import ReasoningAgentService
+from app.services.git_service import GitService
 
 class MCPService:
 
     def __init__(self):
-        # We now support real API keys if provided in .env
-        self.tavily_api_key = os.getenv("TAVILY_API_KEY")
-        self.serper_api_key = os.getenv("SERPER_API_KEY")
-        self.smtp_email = os.getenv("SMTP_EMAIL")
-        self.smtp_password = os.getenv("SMTP_PASSWORD")
-        self.slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
-        
+        # ... existing ...
         self.tools = [
+            # ... existing ...
+            {
+                "name": "clone_repository",
+                "description": "Clones a GitHub repository to a local folder in 'agent_files'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "repo_url": {"type": "string", "description": "The GitHub URL to clone."},
+                        "folder_name": {"type": "string", "description": "Target folder name in agent_files."}
+                    },
+                    "required": ["repo_url", "folder_name"]
+                }
+            },
+            {
+                "name": "open_in_editor",
+                "description": "Opens a folder or file in a code editor (VS Code or Antigravity).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to open (relative to agent_files)."},
+                        "editor": {"type": "string", "description": "Editor name (vs code, antigravity)."}
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
+                "name": "index_agent_files",
+                "description": "[V3.0 CORE] Scans 'agent_files' and syncs all documents (PDF, DOCX, etc.) to the FAISS vector store. MANDATORY first step for new file analysis.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "ask_document",
+                "description": "[V3.0 CORE] Uses Semantic RAG to answer questions based on indexed documents. Scalable for thousands of pages.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The specific question about the documents."}
+                    },
+                    "required": ["question"]
+                }
+            },
+            {
+                "name": "reason_over_mission",
+                "description": "Experimental reasoning agent for complex missions. Uses a specific document to follow instructions and check external sources.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {"type": "string", "description": "The mission document in agent_files."},
+                        "mission": {"type": "string", "description": "The objective or question."}
+                    },
+                    "required": ["filename", "mission"]
+                }
+            },
             # ... existing tools ...
             {
                 "name": "google_search",
@@ -99,8 +154,8 @@ class MCPService:
                 }
             },
             {
-                "name": "read_pdf",
-                "description": "Extracts text from a PDF file located in the 'agent_files' folder.",
+                "name": "read_pdf_legacy",
+                "description": "[LEGACY] Extracts raw text from a PDF. Use ONLY if V3.0 RAG is unavailable or simple extraction is preferred.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -266,6 +321,11 @@ class MCPService:
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Optional list of image filenames from agent_files to attach."
+                        },
+                        "video_filenames": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of video filenames from agent_files to attach."
                         }
                     },
                     "required": ["text"]
@@ -289,7 +349,17 @@ class MCPService:
     async def execute_tool(self, name: str, arguments: Dict[str, Any]) -> str:
         """Executes the requested tool and returns the result."""
         try:
-            if name == "google_search":
+            if name == "index_agent_files":
+                return await self._index_agent_files()
+            elif name == "ask_document":
+                return await self._ask_document(arguments.get("question"))
+            elif name == "reason_over_mission":
+                return await self._reason_over_mission(arguments.get("filename"), arguments.get("mission"))
+            elif name == "clone_repository":
+                return await self._clone_repository(arguments.get("repo_url"), arguments.get("folder_name"))
+            elif name == "open_in_editor":
+                return await self._open_in_editor(arguments.get("path"), arguments.get("editor", "vs code"))
+            elif name == "google_search":
                 return await self._real_search(arguments.get("query"))
             elif name == "browse_url":
                 return await self._browse_url(arguments.get("url"))
@@ -299,7 +369,7 @@ class MCPService:
                 return self._write_file(arguments.get("filename"), arguments.get("content"))
             elif name == "analyze_data":
                 return self._analyze_data(arguments.get("filename"), arguments.get("query"))
-            elif name == "read_pdf":
+            elif name == "read_pdf" or name == "read_pdf_legacy":
                 return self._read_pdf(arguments.get("filename"))
             elif name == "draft_email":
                 return self._draft_email(arguments.get("recipient"), arguments.get("subject"), arguments.get("body"), arguments.get("attachments"))
@@ -324,7 +394,7 @@ class MCPService:
             elif name == "generate_linkedin_post":
                 return await self._generate_linkedin_post(arguments.get("topic"))
             elif name == "post_to_linkedin":
-                return await self._post_to_linkedin(arguments.get("text"), arguments.get("image_filenames", []))
+                return await self._post_to_linkedin(arguments.get("text"), arguments.get("image_filenames", []), arguments.get("video_filenames", []))
             else:
                 return f"Error: Tool '{name}' not found."
         except Exception as e:
@@ -334,7 +404,78 @@ class MCPService:
 
 
 
-    # ... (existing init) ...
+    def _get_agent_files_path(self):
+        return os.path.join(os.getcwd(), "agent_files")
+
+    async def _index_agent_files(self) -> str:
+        """Scans agent_files/ and indexes all valid documents."""
+        folder = self._get_agent_files_path()
+        if not os.path.exists(folder):
+            return "No 'agent_files' directory found."
+        
+        files = os.listdir(folder)
+        indexed_count = 0
+        
+        for filename in files:
+            path = os.path.join(folder, filename)
+            if os.path.isfile(path):
+                # Auto-parse
+                chunks = DocumentParserService.parse_any(path)
+                if chunks:
+                    vector_store.add_documents(chunks, {"filename": filename, "path": path})
+                    indexed_count += 1
+        
+        return f"✅ Successfully scanned and indexed {indexed_count} documents in the vector store."
+
+    async def _ask_document(self, question: str) -> str:
+        """Performs semantic search across indexed documents and returns context."""
+        results = vector_store.search(question, k=5)
+        if not results:
+            return "No relevant information found in your documents. Have you indexed them using 'index_agent_files'?"
+        
+        context = []
+        for i, res in enumerate(results):
+            context.append(f"[{i+1}] Source: {res['source']} (Page {res.get('page', '?')}):\n{res['text']}")
+            
+        return "📄 **Relevant Document Context:**\n\n" + "\n\n".join(context)
+
+    async def _reason_over_mission(self, filename: str, mission: str) -> str:
+        """Launches a reasoning agent to solve a complex mission using a document."""
+        path = os.path.join(self._get_agent_files_path(), filename)
+        if not os.path.exists(path):
+            return f"Error: Mission document '{filename}' not found."
+        
+        # Parse the mission document for context
+        chunks = DocumentParserService.parse_any(path)
+        if not chunks:
+            return f"Error: Could not extract instructions from '{filename}'."
+        
+        doc_context = "\n".join(chunks)
+        
+        # Start the LangGraph reasoning agent
+        reasoning_service = ReasoningAgentService()
+        result = await reasoning_service.run_mission(doc_context, mission)
+        
+        return f"🚀 **Reasoning Agent Report:**\n\n{result}"
+
+    async def _clone_repository(self, repo_url: str, folder_name: str) -> str:
+        """Clones a repo into agent_files."""
+        target_path = os.path.join(self._get_agent_files_path(), folder_name)
+        success = GitService.clone_repo(repo_url, target_path)
+        if success:
+            return f"✅ Repository cloned successfully to agent_files/{folder_name}."
+        return f"❌ Failed to clone repository. check URL or if folder already exists."
+
+    async def _open_in_editor(self, path: str, editor: str) -> str:
+        """Opens a path in the editor."""
+        full_path = os.path.join(self._get_agent_files_path(), path)
+        if not os.path.exists(full_path):
+            return f"Error: Path '{path}' not found in agent_files."
+        
+        success = GitService.open_in_editor(full_path, editor)
+        if success:
+            return f"✅ Opening '{path}' in {editor}..."
+        return f"❌ Failed to launch editor."
 
     def _get_setting(self, key: str) -> str:
         """Fetches a setting from the database, falling back to env vars."""
@@ -1035,48 +1176,36 @@ To publish this post, use the 'post_to_linkedin' tool with the text above."""
         except Exception as e:
             return f"Post Generation Error: {str(e)}"
 
-    async def _post_to_linkedin(self, text: str, image_filenames: List[str] = None) -> str:
-        """Post content to LinkedIn with optional images"""
+
+    async def _post_to_linkedin(self, text: str, image_filenames: List[str] = [], video_filenames: List[str] = []) -> str:
+        """Publishes a post to LinkedIn with optional images or videos"""
         try:
             from app.services.linkedin_service import linkedin_service
             
-            # Check authentication
             if not linkedin_service.is_authenticated():
                 auth_url = linkedin_service.get_authorization_url()
-                return f"""LinkedIn Authentication Required!
-                
-Please visit this URL to authorize EDITH:
-{auth_url}
-
-After authorization, try posting again."""
+                return f"⚠️ You are not authenticated with LinkedIn. Please authenticate here: {auth_url}"
             
-            # Upload images if provided
             image_urns = []
-            if image_filenames:
-                for filename in image_filenames:
-                    # Check if it's an absolute path (from chat upload) or relative (in agent_files)
-                    if os.path.isabs(filename) and os.path.exists(filename):
-                        image_path = filename
-                    else:
-                        image_path = os.path.join(os.getcwd(), "agent_files", filename)
-                        
-                    if not os.path.exists(image_path):
-                        return f"Error: Image '{filename}' not found (checked absolute path and agent_files)."
-                    
-                    urn = await linkedin_service.upload_image(image_path)
-                    if urn:
-                        image_urns.append(urn)
-                    else:
-                        return f"Error: Failed to upload image '{filename}'."
+            for filename in image_filenames:
+                path = os.path.join(os.getcwd(), "agent_files", filename)
+                if os.path.exists(path):
+                    urn = await linkedin_service.upload_image(path)
+                    if urn: image_urns.append(urn)
             
-            # Create post
-            result = await linkedin_service.create_post(text, image_urns if image_urns else None)
+            video_urns = []
+            for filename in video_filenames:
+                path = os.path.join(os.getcwd(), "agent_files", filename)
+                if os.path.exists(path):
+                    urn = await linkedin_service.upload_video(path)
+                    if urn: video_urns.append(urn)
+            
+            result = await linkedin_service.create_post(text, image_urns, video_urns)
             
             if result.get("success"):
-                return f"✅ Successfully posted to LinkedIn!\n\nPost ID: {result.get('post_id')}"
+                return f"✅ **Post Published!**\nURL: {result.get('post_url')}"
             else:
-                return f"❌ Failed to post to LinkedIn: {result.get('error')}"
-                
+                return f"❌ LinkedIn Error: {result.get('error')}"
         except Exception as e:
             return f"LinkedIn Post Error: {str(e)}"
 

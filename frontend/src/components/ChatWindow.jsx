@@ -39,7 +39,7 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
       const data = await res.json();
       if (res.ok) {
         onSend(
-          `I have uploaded the file: ${data.filename}. Please analyze it.`
+          `I have uploaded the file: ${data.filename}. Please analyze it.`,
         );
       } else {
         alert("Upload failed: " + data.detail);
@@ -51,20 +51,35 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
   };
 
   return (
-    <>
+    <div className="chat-window">
       <div className="messages-list">
         {messages.map((m) => (
           <div key={m.id} className={`message ${m.sender}`}>
-            <div className="avatar">
-              {m.sender === "user" ? <User size={20} /> : <Bot size={20} />}
-            </div>
             <div
               className={`bubble ${m.sender === "ai" ? "markdown-body" : ""}`}
             >
               {m.sender === "ai" ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {m.text}
-                </ReactMarkdown>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "15px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.65rem",
+                      color: "var(--accent-primary)",
+                      letterSpacing: "0.1em",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    EDITH_OUTPUT :: ANALYZING_SEQUENCE
+                  </div>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {m.text}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 m.text
               )}
@@ -73,22 +88,34 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
         ))}
         {isProcessing && (
           <div className="message ai">
-            <div className="avatar">
-              <Bot size={20} />
-            </div>
-            <div className="bubble status-dots">
-              <span
-                className="dot"
-                style={{ animation: "pulse 1s infinite" }}
-              ></span>
-              <span
-                className="dot"
-                style={{ animation: "pulse 1s infinite 0.2s" }}
-              ></span>
-              <span
-                className="dot"
-                style={{ animation: "pulse 1s infinite 0.4s" }}
-              ></span>
+            <div className="bubble" style={{ display: "flex", gap: "8px" }}>
+              <div
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  background: "var(--accent-primary)",
+                  borderRadius: "50%",
+                  animation: "pulseNeon 0.5s infinite",
+                }}
+              ></div>
+              <div
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  background: "var(--accent-primary)",
+                  borderRadius: "50%",
+                  animation: "pulseNeon 0.5s infinite 0.2s",
+                }}
+              ></div>
+              <div
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  background: "var(--accent-primary)",
+                  borderRadius: "50%",
+                  animation: "pulseNeon 0.5s infinite 0.4s",
+                }}
+              ></div>
             </div>
           </div>
         )}
@@ -103,16 +130,16 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
             style={{
-              marginRight: "8px",
+              marginRight: "20px",
               background: "transparent",
               border: "none",
               cursor: "pointer",
-              color: "#64748b",
+              color: "var(--text-dim)",
               display: "flex",
               alignItems: "center",
             }}
           >
-            <Paperclip size={20} />
+            <Paperclip size={20} strokeWidth={1.5} />
           </button>
           <input
             type="file"
@@ -122,17 +149,36 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
           />
           <input
             type="text"
-            placeholder="Type a message or command..."
+            placeholder="Command EDITH..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isProcessing}
+            style={{ fontFamily: "var(--font-mono)" }}
           />
-          <button type="submit" disabled={isProcessing || !input.trim()}>
-            <Send size={18} />
+          <button
+            type="submit"
+            disabled={isProcessing || !input.trim()}
+            style={{
+              background: "var(--accent-primary)",
+              borderRadius: "12px",
+              padding: "10px 20px",
+              border: "none",
+              cursor: "pointer",
+              color: "#000",
+              fontWeight: 800,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <span style={{ fontSize: "0.7rem", letterSpacing: "2px" }}>
+              EXEC
+            </span>
+            <Send size={16} strokeWidth={3} />
           </button>
         </form>
       </div>
-    </>
+    </div>
   );
 };
 
