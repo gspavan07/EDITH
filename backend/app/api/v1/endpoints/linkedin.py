@@ -68,3 +68,11 @@ async def linkedin_status():
         "authenticated": is_auth,
         "user_id": linkedin_service.user_id if is_auth else None
     }
+@router.post("/disconnect")
+async def linkedin_disconnect():
+    """Disconnect LinkedIn and clear tokens"""
+    success = await linkedin_service.clear_token()
+    if success:
+        return {"success": True, "message": "Successfully disconnected LinkedIn"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to disconnect LinkedIn")

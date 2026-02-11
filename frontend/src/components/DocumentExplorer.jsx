@@ -5,8 +5,8 @@ import {
   Search,
   Database,
   RefreshCw,
-  Trash2,
   CheckCircle,
+  X,
 } from "lucide-react";
 
 const DocumentExplorer = ({ onClose }) => {
@@ -51,235 +51,71 @@ const DocumentExplorer = ({ onClose }) => {
   );
 
   return (
-    <div className="document-explorer-panel">
-      <div className="explorer-header shadow-glow">
+    <div className="bg-white rounded-3xl shadow-xl border border-gray-100 w-full h-full flex flex-col overflow-hidden">
+      <div className="p-6 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Database className="text-accent" size={20} />
-          <h2>Knowledge Base Explorer</h2>
+          <Database className="text-indigo-500" size={20} />
+          <h2 className="text-lg font-semibold text-gray-900">Knowledge Base</h2>
         </div>
-        <button onClick={onClose} className="close-btn">
-          ×
+        <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-all">
+          <X size={20} />
         </button>
       </div>
 
-      <div className="explorer-toolbar">
-        <div className="search-box">
-          <Search size={16} />
-          <input
-            type="text"
-            placeholder="Search indexed corpus..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="p-6 border-b border-gray-100">
+        <div className="flex gap-3">
+          <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+            <Search size={16} className="text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search documents..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-transparent border-none outline-none text-gray-900 w-full text-sm"
+            />
+          </div>
+          <button
+            onClick={handleIndexAll}
+            disabled={indexing}
+            className="bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-medium flex items-center gap-2 hover:bg-indigo-600 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={indexing ? "animate-spin" : ""} />
+            {indexing ? "Indexing..." : "Refresh"}
+          </button>
         </div>
-        <button
-          onClick={handleIndexAll}
-          disabled={indexing}
-          className={`index-btn ${indexing ? "loading" : ""}`}
-        >
-          <RefreshCw size={16} className={indexing ? "animate-spin" : ""} />
-          {indexing ? "Re-indexing..." : "Refresh Index"}
-        </button>
       </div>
 
-      <div className="explorer-content">
+      <div className="flex-1 p-6 overflow-y-auto">
         {loading ? (
-          <div className="explorer-loading">
-            <div className="spinner"></div>
-            <span>Scanning Vector Store...</span>
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <div className="w-10 h-10 border-3 border-gray-200 border-t-indigo-500 rounded-full animate-spin"></div>
+            <span className="text-sm text-gray-500">Loading documents...</span>
           </div>
         ) : filteredDocs.length === 0 ? (
-          <div className="explorer-empty">
-            <FileText size={48} className="opacity-20 mb-4" />
-            <p>No documents indexed yet.</p>
-            <p className="text-dim text-sm">
-              Add files to 'agent_files' and click Refresh Index.
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+            <FileText size={48} className="text-gray-300" />
+            <p className="text-gray-900 font-medium">No documents found</p>
+            <p className="text-sm text-gray-500">
+              Add files to 'agent_files' and click Refresh.
             </p>
           </div>
         ) : (
-          <div className="doc-grid">
+          <div className="grid grid-cols-2 gap-4">
             {filteredDocs.map((doc, idx) => (
-              <div key={idx} className="doc-card">
-                <div className="doc-icon">
-                  <FileText size={24} />
+              <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
+                <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-indigo-500">
+                  <FileText size={20} />
                 </div>
-                <div className="doc-info">
-                  <span className="doc-name">{doc.name}</span>
-                  <span className="doc-meta">{doc.type} • Indexed</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-gray-900 block truncate">{doc.name}</span>
+                  <span className="text-xs text-gray-500">{doc.type} • Indexed</span>
                 </div>
-                <div className="doc-status">
-                  <CheckCircle size={14} className="text-success" />
-                </div>
+                <CheckCircle size={16} className="text-green-500" />
               </div>
             ))}
           </div>
         )}
       </div>
-
-      <style jsx>{`
-        .document-explorer-panel {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: 700px;
-          height: 600px;
-          background: rgba(15, 23, 42, 0.95);
-          backdrop-filter: blur(30px);
-          border: 1px solid var(--border);
-          border-radius: 24px;
-          z-index: 1000;
-          display: flex;
-          flex-direction: column;
-          animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-          color: white;
-        }
-
-        .explorer-header {
-          padding: 24px;
-          border-bottom: 1px solid var(--border);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .explorer-header h2 {
-          font-size: 1.1rem;
-          font-weight: 700;
-        }
-
-        .explorer-toolbar {
-          padding: 16px 24px;
-          background: rgba(2, 6, 23, 0.5);
-          display: flex;
-          gap: 16px;
-          align-items: center;
-        }
-
-        .search-box {
-          flex: 1;
-          background: var(--bg-primary);
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          padding: 8px 16px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .search-box input {
-          background: transparent;
-          border: none;
-          color: white;
-          width: 100%;
-          outline: none;
-          font-size: 0.9rem;
-        }
-
-        .index-btn {
-          background: var(--accent);
-          color: #020617;
-          border: none;
-          padding: 10px 16px;
-          border-radius: 10px;
-          font-weight: 600;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .index-btn:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 0 15px var(--accent-glow);
-        }
-
-        .explorer-content {
-          flex: 1;
-          padding: 24px;
-          overflow-y: auto;
-        }
-
-        .doc-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 16px;
-        }
-
-        .doc-card {
-          background: rgba(30, 41, 59, 0.5);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          padding: 16px;
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          transition: all 0.2s;
-        }
-
-        .doc-card:hover {
-          background: rgba(30, 41, 59, 0.8);
-          border-color: var(--accent);
-          transform: translateY(-2px);
-        }
-
-        .doc-icon {
-          width: 44px;
-          height: 44px;
-          background: var(--bg-primary);
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--accent);
-        }
-
-        .doc-info {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .doc-name {
-          font-size: 0.95rem;
-          font-weight: 600;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .doc-meta {
-          font-size: 0.75rem;
-          color: var(--text-dim);
-        }
-
-        .explorer-empty,
-        .explorer-loading {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-        }
-
-        .spinner {
-          width: 40px;
-          height: 40px;
-          border: 3px solid var(--border);
-          border-top-color: var(--accent);
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin-bottom: 16px;
-        }
-
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </div>
   );
 };

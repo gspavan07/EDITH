@@ -1,7 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.db.database import get_db
-from app.db import models
+from fastapi import APIRouter, HTTPException
 from app.services.llm_service import llm_service
 from app.services.intent_service import intent_detector
 from app.services.mcp_service import mcp_service
@@ -19,12 +16,11 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    log_id: int
     intent: str
     actions: List[str] = []
 
 @router.post("/", response_model=ChatResponse)
-async def chat(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat(request: ChatRequest):
     # 1. Intent Detection
     try:
         intent_data = await intent_detector.detect(request.message)
@@ -42,52 +38,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             print(f"Planning failed: {e}")
             plan_data = {"reasoning": "Direct execution due to planning failure.", "steps": [request.message]}
 
-    # 3. Initial Audit Log
-    new_log = models.AuditLog(
-        user_id=1,
-        action_type=intent,
-        description=f"User: {request.message[:50]}...",
-        details={
-            "input": request.message, 
-            "intent_analysis": intent_data, 
-            "plan": plan_data,
-            "steps": []
-        }
-    )
-    db.add(new_log)
-    db.commit()
-    db.refresh(new_log)
+    # Audit logging removed (was SQLite-based)
 
-    # 4. History Handling (Persistence Support)
-    conversation_history = []
-    
-    # If session_id is provided, try to load history from DB if request history is empty
-    db_session = None
-    if request.session_id:
-        db_session = db.query(models.ChatSession).filter(models.ChatSession.external_id == request.session_id).first()
-        if not db_session:
-            db_session = models.ChatSession(external_id=request.session_id, title=f"Chat {request.session_id}")
-            db.add(db_session)
-            db.commit()
-            db.refresh(db_session)
-        
-        # Load last 10 messages if client didn't provide history
-        if not request.history:
-            past_msgs = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == db_session.id).order_by(models.ChatMessage.timestamp.desc()).limit(10).all()
-            for msg in reversed(past_msgs):
-                # Convert back to parts format for Gemni/LLM
-                role = "user" if msg.role == "user" else "model"
-                conversation_history.append({"role": role, "parts": [{"text": msg.content}]})
-        else:
-            conversation_history = request.history.copy()
-    else:
-        conversation_history = request.history.copy()
-
-    # Save user message to DB
-    if db_session:
-        user_msg = models.ChatMessage(session_id=db_session.id, role="user", content=request.message)
-        db.add(user_msg)
-        db.commit()
+    # 4. History Handling (from request only - Supabase handles persistence)
+    conversation_history = request.history.copy() if request.history else []
     
     # Inject Plan if available
     context_instruction = llm_service.system_instruction
@@ -149,12 +103,6 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                         fn_args = {}
 
                     actions_taken.append(f"Action: {fn_name}")
-                    
-                    # Log step
-                    steps = list(new_log.details.get("steps", []))
-                    steps.append({"iteration": i + 1, "action": fn_name, "args": fn_args})
-                    new_log.details = {**new_log.details, "steps": steps}
-                    db.commit()
 
                     # Execute tool with safety
                     try:
@@ -174,11 +122,6 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             }
                         }]
                     })
-                    
-                    # Update log
-                    steps[-1]["result"] = tool_result
-                    new_log.details = {**new_log.details, "steps": steps}
-                    db.commit()
             else:
                 final_response = message.get("content") or "I've completed the task as requested."
                 break
@@ -200,19 +143,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         except:
             final_response = "I ran out of reasoning steps (max iterations reached). Here is what I found so far. Check the log for details."
 
-    new_log.description = f"Intent: {intent} | Plan: {len(plan_data['steps']) if plan_data else 0} | Actions: {len(actions_taken)}"
-    new_log.details = {**new_log.details, "response": final_response, "actions": actions_taken}
-    
-    # Save assistant response to DB
-    if db_session:
-        asst_msg = models.ChatMessage(session_id=db_session.id, role="assistant", content=final_response)
-        db.add(asst_msg)
-        
-    db.commit()
+    # Logging removed (was SQLite-based)
 
     return ChatResponse(
         response=final_response,
-        log_id=new_log.id,
         intent=intent,
         actions=actions_taken
     )

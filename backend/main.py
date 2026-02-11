@@ -7,12 +7,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import auth, chat, logs, files, settings, sessions, scheduler, linkedin
-from app.db import models
-from app.db.database import engine
+from app.api.v1.endpoints import chat, files, scheduler, linkedin, gmail, chat_sessions
 
-# Create DB tables on startup
-models.Base.metadata.create_all(bind=engine)
+# SQLite removed - using Supabase for all persistence
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,14 +27,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+
+# Active endpoints (Supabase-based)
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
-app.include_router(logs.router, prefix="/api/v1/logs", tags=["Logs"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["Files"])
-app.include_router(settings.router, prefix="/api/v1/settings", tags=["Settings"])
-app.include_router(sessions.router, prefix="/api/v1/sessions", tags=["Sessions"])
 app.include_router(scheduler.router, prefix="/api/v1/scheduler", tags=["Scheduler"])
 app.include_router(linkedin.router, prefix="/api/v1/linkedin", tags=["LinkedIn"])
+app.include_router(gmail.router, prefix="/api/v1/gmail", tags=["Gmail"])
+app.include_router(chat_sessions.router, prefix="/api/v1/chat-sessions", tags=["Chat Sessions"])
 
 @app.on_event("startup")
 async def startup_event():

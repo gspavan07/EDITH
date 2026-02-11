@@ -51,34 +51,32 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
   };
 
   return (
-    <div className="chat-window">
-      <div className="messages-list">
+    <div className="flex flex-col h-full bg-white/80 backdrop-blur-xl shadow-lg border border-gray-100">
+      <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8">
         {messages.map((m) => (
-          <div key={m.id} className={`message ${m.sender}`}>
+          <div
+            key={m.id}
+            className={`flex flex-col gap-3 w-full max-w-4xl mx-auto ${
+              m.sender === "user" ? "items-end" : "items-start"
+            }`}
+          >
             <div
-              className={`bubble ${m.sender === "ai" ? "markdown-body" : ""}`}
+              className={`px-6 py-4 rounded-2xl text-base leading-relaxed transition-all ${
+                m.sender === "user"
+                  ? "bg-indigo-500 text-white rounded-tr-sm shadow-sm"
+                  : "bg-gray-50 text-gray-900 border border-gray-100 rounded-tl-sm"
+              }`}
             >
               {m.sender === "ai" ? (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "15px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "0.65rem",
-                      color: "var(--accent-primary)",
-                      letterSpacing: "0.1em",
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  >
-                    EDITH_OUTPUT :: ANALYZING_SEQUENCE
+                <div className="flex flex-col gap-3">
+                  <div className="text-xs text-indigo-500 font-medium">
+                    EDITH
                   </div>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {m.text}
-                  </ReactMarkdown>
+                  <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-indigo-600 prose-code:text-indigo-600 prose-code:bg-indigo-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {m.text}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ) : (
                 m.text
@@ -87,94 +85,34 @@ const ChatWindow = ({ messages, onSend, isProcessing }) => {
           </div>
         ))}
         {isProcessing && (
-          <div className="message ai">
-            <div className="bubble" style={{ display: "flex", gap: "8px" }}>
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  background: "var(--accent-primary)",
-                  borderRadius: "50%",
-                  animation: "pulseNeon 0.5s infinite",
-                }}
-              ></div>
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  background: "var(--accent-primary)",
-                  borderRadius: "50%",
-                  animation: "pulseNeon 0.5s infinite 0.2s",
-                }}
-              ></div>
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  background: "var(--accent-primary)",
-                  borderRadius: "50%",
-                  animation: "pulseNeon 0.5s infinite 0.4s",
-                }}
-              ></div>
+          <div className="flex flex-col gap-3 w-full max-w-4xl mx-auto items-start">
+            <div className="px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 rounded-tl-sm text-gray-400 italic text-sm">
+              Thinking...
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="input-container">
-        <form className="input-wrapper" onSubmit={handleSubmit}>
-          <button
-            type="button"
-            className="attach-btn"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isProcessing}
-            style={{
-              marginRight: "20px",
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-dim)",
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <Paperclip size={20} strokeWidth={1.5} />
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            style={{ display: "none" }}
-          />
+      <div className="p-6 w-full max-w-4xl mx-auto">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white border border-gray-200 rounded-2xl p-1.5 flex items-center shadow-sm transition-all focus-within:border-indigo-400 focus-within:shadow-md"
+        >
           <input
             type="text"
-            placeholder="Command EDITH..."
+            className="flex-1 bg-transparent border-none px-5 py-3 text-gray-900 placeholder:text-gray-400 outline-none"
+            placeholder="Ask me anything..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isProcessing}
-            style={{ fontFamily: "var(--font-mono)" }}
           />
           <button
             type="submit"
-            disabled={isProcessing || !input.trim()}
-            style={{
-              background: "var(--accent-primary)",
-              borderRadius: "12px",
-              padding: "10px 20px",
-              border: "none",
-              cursor: "pointer",
-              color: "#000",
-              fontWeight: 800,
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-            }}
+            className="w-11 h-11 bg-indigo-500 text-white rounded-xl flex items-center justify-center hover:bg-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!input.trim() || isProcessing}
           >
-            <span style={{ fontSize: "0.7rem", letterSpacing: "2px" }}>
-              EXEC
-            </span>
-            <Send size={16} strokeWidth={3} />
+            <Send size={18} />
           </button>
         </form>
       </div>

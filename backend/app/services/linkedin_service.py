@@ -3,15 +3,13 @@ import httpx
 import json
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from app.db.database import SessionLocal
-from app.db.models import SystemSetting
 
 class LinkedInService:
     def __init__(self):
-        # Try to get credentials from database first, fallback to env
-        self.client_id = self._get_setting("LINKEDIN_CLIENT_ID") or os.getenv("LINKEDIN_CLIENT_ID")
-        self.client_secret = self._get_setting("LINKEDIN_CLIENT_SECRET") or os.getenv("LINKEDIN_CLIENT_SECRET")
-        self.redirect_uri = self._get_setting("LINKEDIN_REDIRECT_URI") or os.getenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/api/v1/linkedin/callback")
+        # Credentials from environment variables
+        self.client_id = os.getenv("LINKEDIN_CLIENT_ID")
+        self.client_secret = os.getenv("LINKEDIN_CLIENT_SECRET")
+        self.redirect_uri = os.getenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/api/v1/linkedin/callback")
         
         # OAuth endpoints
         self.auth_url = "https://www.linkedin.com/oauth/v2/authorization"
@@ -22,11 +20,11 @@ class LinkedInService:
         self.images_url = f"{self.api_base}/images?action=initializeUpload"
         self.posts_url = f"{self.api_base}/posts"
         
-        # Load token from database if available
-        self.access_token = self._get_setting("LINKEDIN_ACCESS_TOKEN")
-        token_expiry_str = self._get_setting("LINKEDIN_TOKEN_EXPIRY")
+        # In-memory token storage (Settings should handle persistence via Supabase if needed)
+        self.access_token = os.getenv("LINKEDIN_ACCESS_TOKEN")
+        token_expiry_str = os.getenv("LINKEDIN_TOKEN_EXPIRY")
         self.token_expiry = datetime.fromisoformat(token_expiry_str) if token_expiry_str else None
-        self.user_id = self._get_setting("LINKEDIN_USER_ID")
+        self.user_id = os.getenv("LINKEDIN_USER_ID")
 
     def get_authorization_url(self, state: str = "random_state") -> str:
         """Generate OAuth authorization URL for user to authenticate"""
@@ -67,15 +65,11 @@ class LinkedInService:
                 # Get user profile to obtain user ID
                 await self._get_user_profile()
                 
-                # Save tokens to database for persistence
-                self._save_setting("LINKEDIN_ACCESS_TOKEN", self.access_token)
-                self._save_setting("LINKEDIN_TOKEN_EXPIRY", self.token_expiry.isoformat())
-                self._save_setting("LINKEDIN_USER_ID", self.user_id)
-                
                 return {
                     "success": True,
                     "access_token": self.access_token,
-                    "expires_in": expires_in
+                    "expires_in": expires_in,
+                    "user_id": self.user_id
                 }
             else:
                 return {
@@ -88,7 +82,7 @@ class LinkedInService:
         async with httpx.AsyncClient() as client:
             headers = {
                 "Authorization": f"Bearer {self.access_token}",
-                "LinkedIn-Version": "202411",
+                "LinkedIn-Version": "202601",
                 "X-Restli-Protocol-Version": "2.0.0"
             }
             
@@ -116,7 +110,7 @@ class LinkedInService:
                 # Step 1: Initialize upload
                 headers = {
                     "Authorization": f"Bearer {self.access_token}",
-                    "LinkedIn-Version": "202411",
+                    "LinkedIn-Version": "202601",
                     "X-Restli-Protocol-Version": "2.0.0",
                     "Content-Type": "application/json"
                 }
@@ -162,13 +156,12 @@ class LinkedInService:
             return None
 
     async def upload_video(self, video_path: str) -> Optional[str]:
-        """Upload video to LinkedIn (Simplified implementation for smaller files)"""
+        """Upload video to LinkedIn"""
         try:
             async with httpx.AsyncClient() as client:
-                # Step 1: Initialize video upload
                 headers = {
                     "Authorization": f"Bearer {self.access_token}",
-                    "LinkedIn-Version": "202411",
+                    "LinkedIn-Version": "202601",
                     "X-Restli-Protocol-Version": "2.0.0"
                 }
                 
@@ -196,7 +189,6 @@ class LinkedInService:
                 upload_url = upload_instructions["uploadUrl"]
                 video_urn = init_data["value"]["video"]
                 
-                # Step 2: Upload video data
                 with open(video_path, "rb") as f:
                     video_data = f.read()
                 
@@ -216,102 +208,54 @@ class LinkedInService:
             return None
 
     async def create_post(self, text: str, image_urns: List[str] = None, video_urns: List[str] = None) -> Dict[str, Any]:
-        """Create a LinkedIn post with optional images"""
+        """Create a LinkedIn post with optional media"""
         try:
             async with httpx.AsyncClient() as client:
                 headers = {
                     "Authorization": f"Bearer {self.access_token}",
-                    "LinkedIn-Version": "202411",
+                    "LinkedIn-Version": "202601",
                     "X-Restli-Protocol-Version": "2.0.0",
                     "Content-Type": "application/json"
                 }
                 
-                # Build post payload
                 post_payload = {
                     "author": f"urn:li:person:{self.user_id}",
                     "commentary": text,
                     "visibility": "PUBLIC",
                     "distribution": {
-                        "feedDistribution": "MAIN_FEED",
-                        "targetEntities": [],
-                        "thirdPartyDistributionChannels": []
+                        "feedDistribution": "MAIN_FEED"
                     },
-                    "lifecycleState": "PUBLISHED",
-                    "isReshareDisabledByAuthor": False
+                    "lifecycleState": "PUBLISHED"
                 }
                 
-                # Add media if provided
                 if image_urns or video_urns:
                     if video_urns:
-                        post_payload["content"] = {
-                            "media": {
-                                "title": "Video Post",
-                                "id": video_urns[0]
-                            }
-                        }
+                        post_payload["content"] = {"media": {"id": video_urns[0]}}
                     elif image_urns:
-                        post_payload["content"] = {
-                            "media": {
-                                "title": "Image Post",
-                                "id": image_urns[0] if len(image_urns) == 1 else None
-                            }
-                        }
-                        
-                        if len(image_urns) > 1:
-                            post_payload["content"]["multiImage"] = {
-                                "images": [{"id": urn} for urn in image_urns]
-                            }
+                        post_payload["content"] = {"media": {"id": image_urns[0]}}
                 
-                response = await client.post(
-                    self.posts_url,
-                    headers=headers,
-                    json=post_payload
-                )
+                response = await client.post(self.posts_url, headers=headers, json=post_payload)
                 
                 if response.status_code in [200, 201]:
                     post_id = response.headers.get("x-restli-id", "unknown")
-                    post_url = f"https://www.linkedin.com/feed/update/{post_id}/"
                     return {
                         "success": True,
                         "post_id": post_id,
-                        "post_url": post_url,
+                        "post_url": f"https://www.linkedin.com/feed/update/{post_id}/",
                         "message": "Post created successfully!"
                     }
                 else:
-                    return {
-                        "success": False,
-                        "error": f"Post creation failed: {response.text}"
-                    }
+                    return {"success": False, "error": f"Post creation failed: {response.text}"}
                     
         except Exception as e:
-            return {
-                "success": False,
-                "error": f"Post creation error: {str(e)}"
-            }
+            return {"success": False, "error": f"Post creation error: {str(e)}"}
 
-    def _get_setting(self, key: str) -> Optional[str]:
-        """Get setting value from database"""
-        try:
-            db = SessionLocal()
-            setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
-            db.close()
-            return setting.value if setting else None
-        except:
-            return None
-
-    def _save_setting(self, key: str, value: str):
-        """Save setting value to database"""
-        try:
-            db = SessionLocal()
-            setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
-            if setting:
-                setting.value = value
-            else:
-                setting = SystemSetting(key=key, value=value)
-                db.add(setting)
-            db.commit()
-            db.close()
-        except Exception as e:
-            print(f"Error saving setting: {e}")
+    async def clear_token(self):
+        """Clear LinkedIn tokens and reset service state"""
+        self.access_token = None
+        self.token_expiry = None
+        self.user_id = None
+        return True
 
 linkedin_service = LinkedInService()
+

@@ -24,9 +24,8 @@ from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT, TA_CENTER
 from docx import Document
 from pptx import Presentation
 from openpyxl import Workbook
-from app.db.database import SessionLocal
-from app.db.models import SystemSetting
-from app.db import models
+
+
 from app.services.document_parser_service import DocumentParserService
 from app.services.vector_store_service import vector_store
 from app.services.reasoning_agent_service import ReasoningAgentService
@@ -478,19 +477,8 @@ class MCPService:
         return f"❌ Failed to launch editor."
 
     def _get_setting(self, key: str) -> str:
-        """Fetches a setting from the database, falling back to env vars."""
-        try:
-            db = SessionLocal()
-            setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == key).first()
-            if setting and setting.value:
-                return setting.value
-        except Exception as e:
-            print(f"DB Setting Error: {e}")
-        finally:
-            db.close()
-        
-        # Fallback to env
-        return os.getenv(key)
+        """Fetches a setting from environment variables (database storage removed)."""
+        return os.getenv(key, "")
 
     # Email draft storage (in-memory for simplicity)
     _email_draft = None
